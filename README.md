@@ -238,15 +238,3 @@ Este projeto foi desenvolvido para:
 * facilitar análises iniciais em pentests
 
 ---
-
-# 🤝 Contribuição
-
-Pull requests são bem-vindos.
-
-Sugestões de melhorias, correções ou novas funcionalidades podem ser abertas na seção de **Issues**.
-
----
-
-# 📜 Licença
-
-Este projeto está licenciado sob a **MIT License**.
