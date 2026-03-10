@@ -105,7 +105,26 @@ def run_whatweb():
 
     print("[+] Fingerprint com WhatWeb")
 
-    run("cat alive.txt | awk '{print $1}' | whatweb --color=never > whatweb.txt")
+    urls=[l.split()[0].strip() for l in open("alive.txt").readlines()]
+
+    results=[]
+
+    for u in urls:
+
+        try:
+
+            r=run(f"whatweb --color=never {u}")
+
+            if r:
+                results.append(r)
+
+        except:
+            pass
+
+    if not results:
+        results.append("Nenhuma tecnologia identificada")
+
+    open("whatweb.txt","w").write("\n".join(results))
 
 
 # -------------------------
@@ -147,7 +166,7 @@ def check_methods(url):
 
                 findings.append(f"{url} -> {', '.join(interesting)} (via OPTIONS)")
 
-        if "DAV" in r.headers or "Public" in r.headers:
+        if "DAV" in r.headers or "MS-Author-Via" in r.headers:
 
             findings.append(f"{url} -> WebDAV possivelmente habilitado")
 
