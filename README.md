@@ -38,8 +38,8 @@ Essas ferramentas precisam estar instaladas no sistema para o funcionamento corr
 Clone o repositório:
 
 ```bash
-git clone https://github.com/seuusuario/recon-framework.git
-cd recon-framework
+git clone https://github.com/guigavicentin/recon.git
+cd recon
 ```
 
 Instale as dependências Python:
