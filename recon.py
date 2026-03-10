@@ -12,11 +12,11 @@ PORTS="80,81,443,3000,8000,8001,8080,8081,8443,8888,9000"
 
 banners=[
 
-    "===== Domínio Checker =====",
-    "### Analisador de Domínios ###",
-    "--- Verificação de Domínios ---",
+"===== Domínio Checker =====",
+"### Analisador de Domínios ###",
+"--- Verificação de Domínios ---",
 
-"""
+    """
 @@@@@%+..........................................................................+%@@@@@@
 @@@@#-...............................:-=+*##*+==:.................................-#@@@@@
 @@%=................................+@@@@@@@@@@@@#..................................+%@@@
@@ -50,11 +50,11 @@ banners=[
 %-....................:......+%%%%%%%%%%%%%%%%%%%%%%%%%%%%=...........................-%@
 @%+..................................................................................*%@@
 """
+
 ]
 
 
 def banner():
-
     print(random.choice(banners))
 
 
@@ -73,9 +73,13 @@ def enum_subdomains(domain):
 
     print("[+] Enumerando subdomínios")
 
-    subs=run(f"subfinder -d {domain} -silent")
+    subs1=run(f"subfinder -d {domain} -silent")
 
-    open("subdomains.txt","w").write(subs)
+    subs2=run(f"assetfinder --subs-only {domain}")
+
+    subs=set((subs1+"\n"+subs2).splitlines())
+
+    open("subdomains.txt","w").write("\n".join(subs))
 
 
 # -------------------------
@@ -94,6 +98,17 @@ def http_discovery():
 
 
 # -------------------------
+# WHATWEB
+# -------------------------
+
+def run_whatweb():
+
+    print("[+] Fingerprint com WhatWeb")
+
+    run("cat alive.txt | awk '{print $1}' | whatweb --color=never > whatweb.txt")
+
+
+# -------------------------
 # PORTSCAN
 # -------------------------
 
@@ -105,18 +120,38 @@ def portscan():
 
 
 # -------------------------
-# HTTP METHODS
+# HTTP METHODS (PASSIVE)
 # -------------------------
 
-def check_method(url,method):
+def check_methods(url):
 
     try:
 
-        r=requests.request(method,url,timeout=5)
+        r=requests.options(url,timeout=5)
 
-        if r.status_code not in [403,405,501]:
+        findings=[]
 
-            return f"{url} -> {method} ENABLED ({r.status_code})"
+        if "Allow" in r.headers:
+
+            allow=r.headers["Allow"]
+
+            interesting=[]
+
+            for m in ["PUT","DELETE","TRACE","CONNECT","PATCH","PROPFIND"]:
+
+                if m in allow:
+
+                    interesting.append(m)
+
+            if interesting:
+
+                findings.append(f"{url} -> {', '.join(interesting)} (via OPTIONS)")
+
+        if "DAV" in r.headers or "Public" in r.headers:
+
+            findings.append(f"{url} -> WebDAV possivelmente habilitado")
+
+        return findings
 
     except:
         pass
@@ -124,28 +159,27 @@ def check_method(url,method):
 
 def test_methods():
 
-    print("[+] Testando TRACE PUT DELETE")
+    print("[+] Identificando métodos HTTP via OPTIONS")
 
-    urls=[l.split()[0] for l in open("alive.txt")]
+    urls=[l.split()[0].strip() for l in open("alive.txt").readlines()]
 
     results=[]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as exe:
 
-        futures=[]
-
-        for u in urls:
-
-            for m in ["TRACE","PUT","DELETE"]:
-
-                futures.append(exe.submit(check_method,u,m))
+        futures=[exe.submit(check_methods,u) for u in urls]
 
         for f in concurrent.futures.as_completed(futures):
 
             r=f.result()
 
             if r:
-                results.append(r)
+
+                results.extend(r)
+
+    if not results:
+
+        results.append("Nenhum método interessante identificado")
 
     open("methods.txt","w").write("\n".join(results))
 
@@ -158,7 +192,7 @@ def detect_cors():
 
     print("[+] Detectando CORS")
 
-    urls=[l.split()[0] for l in open("alive.txt")]
+    urls=[l.split()[0].strip() for l in open("alive.txt").readlines()]
 
     results=[]
 
@@ -166,13 +200,35 @@ def detect_cors():
 
         try:
 
-            r=requests.get(u,headers={"Origin":"evil.com"},timeout=5)
+            r=requests.get(
 
-            if "Access-Control-Allow-Origin" in r.headers:
+                u,
 
-                if r.headers["Access-Control-Allow-Origin"]=="*" or "evil.com" in r.headers["Access-Control-Allow-Origin"]:
+                headers={"Origin":"https://evil.com"},
 
-                    results.append(f"CORS POSSIVEL -> {u}")
+                timeout=5
+
+            )
+
+            origin=r.headers.get("Access-Control-Allow-Origin","")
+
+            creds=r.headers.get("Access-Control-Allow-Credentials","")
+
+            if origin:
+
+                if origin=="*":
+
+                    results.append(f"CORS WILDCARD -> {u}")
+
+                elif "evil.com" in origin:
+
+                    if creds.lower()=="true":
+
+                        results.append(f"CORS CRITICAL (Credentials Enabled) -> {u}")
+
+                    else:
+
+                        results.append(f"CORS REFLECTION -> {u}")
 
         except:
             pass
@@ -192,7 +248,7 @@ def check_clickjacking():
 
     print("[+] Testando Clickjacking")
 
-    urls=[l.split()[0] for l in open("alive.txt")]
+    urls=[l.split()[0].strip() for l in open("alive.txt").readlines()]
 
     vulns=[]
 
@@ -224,7 +280,7 @@ def detect_exposed():
 
     print("[+] Detectando .git e .env")
 
-    urls=[l.split()[0] for l in open("alive.txt")]
+    urls=[l.split()[0].strip() for l in open("alive.txt").readlines()]
 
     vulns=[]
 
@@ -318,7 +374,7 @@ def run_nuclei():
 
     print("[+] Rodando nuclei")
 
-    run("cat alive.txt | nuclei -severity critical,high,medium -o nuclei.txt")
+    run("cat alive.txt | awk '{print $1}' | nuclei -severity critical,high,medium -o nuclei.txt")
 
     if not os.path.exists("nuclei.txt") or os.stat("nuclei.txt").st_size==0:
 
@@ -334,25 +390,39 @@ def main():
     banner()
 
     parser=argparse.ArgumentParser(
+
         description="Recon Framework - Automação de análise de vulnerabilidade"
+
     )
 
     parser.add_argument(
+
         "-d","--domain",
+
         required=True,
+
         help="Domínio alvo"
+
     )
 
     parser.add_argument(
+
         "--no-nuclei",
+
         action="store_true",
+
         help="Não executar nuclei"
+
     )
 
     parser.add_argument(
+
         "--no-portscan",
+
         action="store_true",
+
         help="Não executar scan de portas"
+
     )
 
     args=parser.parse_args()
@@ -360,6 +430,8 @@ def main():
     enum_subdomains(args.domain)
 
     http_discovery()
+
+    run_whatweb()
 
     if not args.no_portscan:
 
