@@ -345,44 +345,88 @@ def detect_takeover():
 # -------------------------
 
 def check_mail_spoof(domain):
-
     print("[+] Verificando Mail Spoofing")
 
-    results=[]
+    results = []
 
+    # SPF
+    spf_found = False
     try:
+        txt_records = dns.resolver.resolve(domain, "TXT")
 
-        spf=dns.resolver.resolve(domain,'TXT')
+        for record in txt_records:
+            record_text = str(record).replace('"', '').lower()
 
-        found=False
+            if record_text.startswith("v=spf1"):
+                spf_found = True
 
-        for r in spf:
+                if "+all" in record_text:
+                    results.append("SPF vulnerável: '+all' permite qualquer servidor enviar e-mails.")
+                elif "?all" in record_text:
+                    results.append("SPF fraco: '?all' é permissivo.")
+                elif "~all" in record_text:
+                    results.append("SPF configurado com '~all' (softfail).")
+                elif "-all" in record_text:
+                    results.append("SPF configurado com '-all' (mais rígido).")
+                else:
+                    results.append("SPF encontrado, mas sem mecanismo final claro.")
+                break
 
-            if "spf1" in str(r):
+        if not spf_found:
+            results.append("SPF não encontrado.")
 
-                found=True
+    except dns.resolver.NoAnswer:
+        results.append("SPF não encontrado (NoAnswer).")
+    except dns.resolver.NXDOMAIN:
+        results.append("Domínio não encontrado ao consultar SPF.")
+    except dns.resolver.Timeout:
+        results.append("Timeout ao consultar SPF.")
+    except Exception as e:
+        results.append(f"Erro ao consultar SPF: {e}")
 
-        if not found:
-
-            results.append("SPF não encontrado")
-
-    except:
-
-        results.append("SPF não encontrado")
-
+    # DMARC
+    dmarc_found = False
     try:
+        dmarc_records = dns.resolver.resolve(f"_dmarc.{domain}", "TXT")
 
-        dns.resolver.resolve("_dmarc."+domain,'TXT')
+        for record in dmarc_records:
+            record_text = str(record).replace('"', '').lower()
 
-    except:
+            if record_text.startswith("v=dmarc1"):
+                dmarc_found = True
 
-        results.append("DMARC não encontrado")
+                if "p=reject" in record_text:
+                    results.append("DMARC configurado com 'p=reject' (política forte).")
+                elif "p=quarantine" in record_text:
+                    results.append("DMARC configurado com 'p=quarantine' (política intermediária).")
+                elif "p=none" in record_text:
+                    results.append("DMARC configurado com 'p=none' (somente monitoramento).")
+                else:
+                    results.append("DMARC encontrado, mas política não identificada claramente.")
+                break
 
-    if not results:
+        if not dmarc_found:
+            results.append("DMARC não encontrado.")
 
-        results.append("Proteção de email configurada")
+    except dns.resolver.NoAnswer:
+        results.append("DMARC não encontrado (NoAnswer).")
+    except dns.resolver.NXDOMAIN:
+        results.append("DMARC não encontrado (NXDOMAIN).")
+    except dns.resolver.Timeout:
+        results.append("Timeout ao consultar DMARC.")
+    except Exception as e:
+        results.append(f"Erro ao consultar DMARC: {e}")
 
-    open("mail_spoof.txt","w").write("\n".join(results))
+    if spf_found and dmarc_found:
+        results.append("O domínio possui SPF e DMARC configurados, mas isso não garante proteção total contra spoofing.")
+    else:
+        results.append("O domínio possui proteção parcial ou ausente contra spoofing de e-mail.")
+
+    # Salva resultado
+    with open("mail_spoof.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(results))
+
+    return results
 
 
 # -------------------------
